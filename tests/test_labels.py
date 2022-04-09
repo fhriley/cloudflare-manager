@@ -1,0 +1,67 @@
+import unittest
+from unittest.mock import Mock
+
+from cloudflared_hostnames.cloudflare_api import CloudflareApi
+from cloudflared_hostnames.main import get_params_from_labels
+
+cf_mock = Mock(CloudflareApi)
+cf_mock.get_zone_id.return_value = 'example_zone_id'
+
+valid_labels = {
+    'cloudflare.zero_trust.access.tunnel.public_hostname': 'host.example.com',
+    'cloudflare.zero_trust.access.tunnel.service': 'http://foo:80',
+}
+
+class TestLabels(unittest.TestCase):
+    def test_bad_hostname(self):
+        labels = {
+            'cloudflare.zero_trust.access.tunnel.public_hostname': 'host',
+            'cloudflare.zero_trust.access.tunnel.service': 'http://foo:80',
+        }
+        with self.assertRaises(Exception):
+            get_params_from_labels(cf_mock, 'tunnel', labels)
+
+    def test_bad_service(self):
+        labels = {
+            'cloudflare.zero_trust.access.tunnel.public_hostname': 'host.example.com',
+            'cloudflare.zero_trust.access.tunnel.service': 'foo://service',
+        }
+        with self.assertRaises(Exception):
+            get_params_from_labels(cf_mock, 'tunnel', labels)
+
+    def _assert_valid(self, params, tunnel_id, zone_id, notlsverify):
+        self.assertEqual(params.hostname, 'host.example.com')
+        self.assertEqual(params.service, 'http://foo:80')
+        self.assertEqual(params.notlsverify, notlsverify)
+        self.assertEqual(params.tunnel_id, tunnel_id)
+        self.assertEqual(params.zone_name, 'example.com')
+        self.assertEqual(params.zone_id, zone_id)
+
+    def test_valid(self):
+        labels = valid_labels
+        params = get_params_from_labels(cf_mock, 'tunnel', labels)
+        self._assert_valid(params, 'tunnel', 'example_zone_id', None)
+
+    def test_valid_with_cached_zone(self):
+        labels = valid_labels
+        zone_name_to_id = {('example.com',): 'example_zone_id_cached'}
+        params = get_params_from_labels(cf_mock, 'tunnel', labels, zone_name_to_id)
+        self._assert_valid(params, 'tunnel', 'example_zone_id_cached', None)
+
+    def test_valid_with_tunnel(self):
+        labels = valid_labels.copy()
+        labels['cloudflare.zero_trust.access.tunnel.id'] = 'specified-tunnel'
+        params = get_params_from_labels(cf_mock, 'tunnel', labels)
+        self._assert_valid(params, 'specified-tunnel', 'example_zone_id', None)
+
+    def test_valid_with_notlsverify(self):
+        labels = valid_labels.copy()
+        labels['cloudflare.zero_trust.access.tunnel.tls.notlsverify'] = 'true'
+        params = get_params_from_labels(cf_mock, 'tunnel', labels)
+        self._assert_valid(params, 'tunnel', 'example_zone_id', True)
+
+    def test_valid_with_invalid_notlsverify(self):
+        labels = valid_labels.copy()
+        labels['cloudflare.zero_trust.access.tunnel.tls.notlsverify'] = 'foo'
+        with self.assertRaises(Exception):
+            get_params_from_labels(cf_mock, 'tunnel', labels)

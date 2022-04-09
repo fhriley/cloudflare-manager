@@ -1,0 +1,3 @@
+[submodule "python-cloudflare"]
+	path = external/python-cloudflare
+	url = https://github.com/fhriley/python-cloudflare.git

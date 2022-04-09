@@ -1,0 +1,30 @@
+version: '3.6'
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: always
+    networks:
+      - cloudflared
+    entrypoint: "cloudflared --no-autoupdate tunnel --loglevel info run --token $CLOUDFLARE_TUNNEL_TOKEN"
+    
+  cloudflared-hostnames:
+    image: fhriley/cloudflared-hostnames:latest
+    restart: always
+    environment:
+      CLOUDFLARE_ACCOUNT_ID: $CLOUDFLARE_ACCOUNT_ID
+      CLOUDFLARE_TUNNEL_ID: $CLOUDFLARE_TUNNEL_ID
+      CLOUDFLARE_API_KEY: $CLOUDFLARE_API_KEY
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  hello-world:
+    image: tutum/hello-world
+    networks:
+      - cloudflared
+    labels:
+      - cloudflare.zero_trust.access.tunnel.public_hostname=hello-world.${CLOUDFLARE_ZONE_NAME}
+      - cloudflare.zero_trust.access.tunnel.service=http://hello-world:80
+
+networks:
+  cloudflared:
