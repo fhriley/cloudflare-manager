@@ -133,16 +133,17 @@ def get_params_from_labels(cf: CloudflareApi, default_tunnel_id: str, labels: Di
     service = labels.get('cloudflare.zero_trust.access.tunnel.service')
     service = validate_service(service)
 
-    zone_name = get_zone_name(hostnames[0])
+    zone_names = [get_zone_name(hn) for hn in hostnames]
 
     tunnel_id = labels.get('cloudflare.zero_trust.access.tunnel.id', default_tunnel_id)
 
     notlsverify = labels.get('cloudflare.zero_trust.access.tunnel.tls.notlsverify')
     notlsverify = validate_notlsverify(notlsverify)
 
-    zone_id = get_zone_id(cf, zone_name, zone_name_to_id)
+    zone_ids = [get_zone_id(cf, zone_name, zone_name_to_id) for zone_name in zone_names]
 
-    return [Params(hn, service, zone_name, zone_id, tunnel_id, notlsverify) for hn in hostnames]
+    return [Params(hn, service, zone_names[ii], zone_ids[ii], tunnel_id, notlsverify) for ii, hn in
+            enumerate(hostnames)]
 
 
 def dns_record_value(tunnel_id: str) -> str:

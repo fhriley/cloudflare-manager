@@ -48,6 +48,15 @@ class TestLabels(unittest.TestCase):
             self.assertEqual(pp.tunnel_id, tunnel_id)
             self.assertEqual(pp.zone_name, 'example.com')
             self.assertEqual(pp.zone_id, zone_id)
+        if len(params) > 2:
+            pp = params[2]
+            self.assertEqual(pp.dns_type, DnsRecordType.CNAME)
+            self.assertEqual(pp.hostname, 'foo.domain.com')
+            self.assertEqual(pp.service, 'http://foo:80')
+            self.assertEqual(pp.notlsverify, notlsverify)
+            self.assertEqual(pp.tunnel_id, tunnel_id)
+            self.assertEqual(pp.zone_name, 'domain.com')
+            self.assertEqual(pp.zone_id, 'domain_zone_id')
 
     def test_valid(self):
         labels = valid_labels
@@ -80,6 +89,10 @@ class TestLabels(unittest.TestCase):
 
     def test_valid_multiple_hostnams(self):
         labels = valid_labels.copy()
-        labels['cloudflare.zero_trust.access.tunnel.public_hostname'] = 'host.example.com,example.com'
+        labels['cloudflare.zero_trust.access.tunnel.public_hostname'] = 'host.example.com,example.com,foo.domain.com'
+
+        cf_mock = Mock(CloudflareApi)
+        cf_mock.get_zone_id.side_effect = ['example_zone_id', 'example_zone_id', 'domain_zone_id']
+
         params = get_params_from_labels(cf_mock, 'tunnel', labels)
         self._assert_valid(params, 'tunnel', 'example_zone_id', None)
