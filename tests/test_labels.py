@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import Mock
 
-from cloudflared_hostnames.cloudflare_api import CloudflareApi
+from cloudflared_hostnames.cloudflare_api import CloudflareApi, DnsRecordType
 from cloudflared_hostnames.main import get_params_from_labels
 
 cf_mock = Mock(CloudflareApi)
@@ -30,12 +30,24 @@ class TestLabels(unittest.TestCase):
             get_params_from_labels(cf_mock, 'tunnel', labels)
 
     def _assert_valid(self, params, tunnel_id, zone_id, notlsverify):
-        self.assertEqual(params.hostname, 'host.example.com')
-        self.assertEqual(params.service, 'http://foo:80')
-        self.assertEqual(params.notlsverify, notlsverify)
-        self.assertEqual(params.tunnel_id, tunnel_id)
-        self.assertEqual(params.zone_name, 'example.com')
-        self.assertEqual(params.zone_id, zone_id)
+        if len(params) > 0:
+            pp = params[0]
+            self.assertEqual(pp.dns_type, DnsRecordType.CNAME)
+            self.assertEqual(pp.hostname, 'host.example.com')
+            self.assertEqual(pp.service, 'http://foo:80')
+            self.assertEqual(pp.notlsverify, notlsverify)
+            self.assertEqual(pp.tunnel_id, tunnel_id)
+            self.assertEqual(pp.zone_name, 'example.com')
+            self.assertEqual(pp.zone_id, zone_id)
+        if len(params) > 1:
+            pp = params[1]
+            self.assertEqual(pp.dns_type, DnsRecordType.CNAME)
+            self.assertEqual(pp.hostname, 'example.com')
+            self.assertEqual(pp.service, 'http://foo:80')
+            self.assertEqual(pp.notlsverify, notlsverify)
+            self.assertEqual(pp.tunnel_id, tunnel_id)
+            self.assertEqual(pp.zone_name, 'example.com')
+            self.assertEqual(pp.zone_id, zone_id)
 
     def test_valid(self):
         labels = valid_labels
@@ -65,3 +77,9 @@ class TestLabels(unittest.TestCase):
         labels['cloudflare.zero_trust.access.tunnel.tls.notlsverify'] = 'foo'
         with self.assertRaises(Exception):
             get_params_from_labels(cf_mock, 'tunnel', labels)
+
+    def test_valid_multiple_hostnams(self):
+        labels = valid_labels.copy()
+        labels['cloudflare.zero_trust.access.tunnel.public_hostname'] = 'host.example.com,example.com'
+        params = get_params_from_labels(cf_mock, 'tunnel', labels)
+        self._assert_valid(params, 'tunnel', 'example_zone_id', None)

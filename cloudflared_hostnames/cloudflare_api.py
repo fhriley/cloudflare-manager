@@ -1,9 +1,15 @@
+from enum import Enum
 import logging
 from typing import Optional, Dict
 
 import CloudFlare
 
 LOGGER = logging.getLogger('cfd-hostnames.api')
+
+
+class DnsRecordType(Enum):
+    A = 1
+    CNAME = 2
 
 
 class CloudflareApi:
@@ -31,18 +37,18 @@ class CloudflareApi:
             LOGGER.error('/accounts/cfd_tunnels/configurations.get - %s - cloudflare api call failed', exc)
         return None
 
-    def get_cnames(self, zone_id: str) -> Optional[Dict]:
+    def get_dns_records(self, zone_id: str) -> Optional[Dict]:
         try:
-            return self._cf.zones.dns_records.get(zone_id, params={'type': 'CNAME'})
+            return self._cf.zones.dns_records.get(zone_id, params={'type': ['A', 'CNAME']})
         except CloudFlare.exceptions.CloudFlareAPIError as exc:
             LOGGER.error('/zones/dns_records.get %d %s - cloudflare api call failed', exc, exc)
         except Exception as exc:
             LOGGER.error('/zones/dns_records.get - %s - cloudflare api call failed', exc)
         return None
 
-    def get_dns_record_id(self, zone_id: str, cname: str) -> Optional[str]:
+    def get_dns_record_id(self, zone_id: str, name: str) -> Optional[str]:
         try:
-            records = self._cf.zones.dns_records.get(zone_id, params={'name': cname, 'per_page': 1})
+            records = self._cf.zones.dns_records.get(zone_id, params={'name': name, 'per_page': 1})
             if not records:
                 return None
             return records[0]['id']
@@ -52,10 +58,10 @@ class CloudflareApi:
             LOGGER.error('/zones.get - %s - cloudflare api call failed', exc)
         return None
 
-    def create_cname(self, zone_id: str, hostname: str, value: str) -> bool:
+    def create_dns_record(self, typ: DnsRecordType, zone_id: str, hostname: str, value: str) -> bool:
         try:
             self._cf.zones.dns_records.post(zone_id, data={
-                'type': 'CNAME',
+                'type': typ.name,
                 'proxied': True,
                 'name': hostname,
                 'content': value,
@@ -68,7 +74,7 @@ class CloudflareApi:
             return False
         return True
 
-    def delete_cname(self, zone_id: str, dns_record_id: str) -> bool:
+    def delete_dns_record(self, zone_id: str, dns_record_id: str) -> bool:
         try:
             self._cf.zones.dns_records.delete(zone_id, dns_record_id)
         except CloudFlare.exceptions.CloudFlareAPIError as exc:

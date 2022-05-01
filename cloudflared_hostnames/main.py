@@ -1,26 +1,30 @@
 import argparse
+from collections import OrderedDict
 import logging
 import os
 from queue import SimpleQueue
 from threading import Thread
-from typing import NamedTuple, Tuple, List, Dict, Optional
+from typing import Tuple, List, Dict, Optional
 from urllib.parse import urlparse
 
 import docker
 from docker.types.daemon import CancellableStream
 
-from .cloudflare_api import CloudflareApi
+from .cloudflare_api import CloudflareApi, DnsRecordType
 
 LOGGER = logging.getLogger('cfd-hostnames')
 
 
-class Params(NamedTuple):
-    hostname: str
-    service: str
-    zone_name: str
-    zone_id: str
-    tunnel_id: str
-    notlsverify: Optional[bool]
+class Params:
+    def __init__(self, hostname: str, service: str, zone_name: str, zone_id: str, tunnel_id: str,
+                 notlsverify: Optional[bool] = None):
+        self.hostname = hostname
+        self.service = service
+        self.zone_name = zone_name
+        self.zone_id = zone_id
+        self.tunnel_id = tunnel_id
+        self.notlsverify = notlsverify
+        self.dns_type = DnsRecordType.CNAME
 
 
 def docker_events_thread(events: CancellableStream, queue: SimpleQueue):
@@ -55,9 +59,10 @@ def validate_hostname(hostname: str):
         hostname = hostname.strip()
     if not hostname:
         raise Exception('hostname not specified')
+    # TODO: use domain regex
     hostname_split = hostname.split('.')
-    if len(hostname_split) != 3:
-        raise Exception('hostname must be like "subdomain.domain.com"')
+    if len(hostname_split) not in (2, 3):
+        raise Exception('hostname must be like "domain.com" or "subdomain.domain.com"')
     return hostname
 
 
@@ -110,16 +115,25 @@ def validate_notlsverify(val: str) -> Optional[bool]:
     raise Exception(f'invalid notlsverify value: "{val}"')
 
 
+def get_zone_name(hostname: str) -> str:
+    hostname_split = hostname.split('.')
+    if len(hostname_split) == 2:
+        return hostname
+    return '.'.join(hostname_split[1:])
+
+
 def get_params_from_labels(cf: CloudflareApi, default_tunnel_id: str, labels: Dict[str, str],
-                           zone_name_to_id: Optional[Dict[Tuple[str], str]] = None) -> Params:
+                           zone_name_to_id: Optional[Dict[Tuple[str], str]] = None) -> List[Params]:
     hostname = labels.get('cloudflare.zero_trust.access.tunnel.public_hostname')
-    hostname = validate_hostname(hostname)
+    hostnames = OrderedDict.fromkeys(hostname.strip().split(','))
+    hostnames = [validate_hostname(hn) for hn in hostnames.keys()]
+    if not hostnames:
+        raise Exception('hostname not specified')
 
     service = labels.get('cloudflare.zero_trust.access.tunnel.service')
     service = validate_service(service)
 
-    hostname_split = hostname.split('.')
-    zone_name = '.'.join(hostname_split[1:])
+    zone_name = get_zone_name(hostnames[0])
 
     tunnel_id = labels.get('cloudflare.zero_trust.access.tunnel.id', default_tunnel_id)
 
@@ -128,10 +142,10 @@ def get_params_from_labels(cf: CloudflareApi, default_tunnel_id: str, labels: Di
 
     zone_id = get_zone_id(cf, zone_name, zone_name_to_id)
 
-    return Params(hostname, service, zone_name, zone_id, tunnel_id, notlsverify)
+    return [Params(hn, service, zone_name, zone_id, tunnel_id, notlsverify) for hn in hostnames]
 
 
-def tunnel_cname(tunnel_id: str) -> str:
+def dns_record_value(tunnel_id: str) -> str:
     return f'{tunnel_id}.cfargotunnel.com'
 
 
@@ -159,14 +173,14 @@ def add_tunnel_ingress(params: Params, tunnel_ingress: List):
                 params.tunnel_id)
 
 
-def get_cnames(cf: CloudflareApi, zone_id: str, cnames_by_zone_id: Optional[Dict] = None):
-    def _get_cnames() -> Dict:
-        cnames = cf.get_cnames(zone_id)
-        if cnames is None:
+def get_dns_records(cf: CloudflareApi, zone_id: str, dns_records_by_zone_id: Optional[Dict] = None):
+    def _get_dns_records() -> Dict:
+        records = cf.get_dns_records(zone_id)
+        if records is None:
             raise Exception(f'Could not find zone id "{zone_id}"')
-        return {ii['name']: ii for ii in cnames}
+        return {ii['name']: ii for ii in records}
 
-    return get_from_cache(cnames_by_zone_id, _get_cnames, zone_id)
+    return get_from_cache(dns_records_by_zone_id, _get_dns_records, zone_id)
 
 
 def get_tunnel_ingress(cf: CloudflareApi, account_id: str, tunnel_id: str,
@@ -180,16 +194,16 @@ def get_tunnel_ingress(cf: CloudflareApi, account_id: str, tunnel_id: str,
     return get_from_cache(tunnel_config_cache, _get_tunnel_ingress, account_id, tunnel_id)
 
 
-def container_add(cf: CloudflareApi, account_id: str, params: Params, new_cnames: Dict[str, Params],
-                  ingress_adds: Dict, cnames_by_zone_id: Optional[Dict] = None,
+def container_add(cf: CloudflareApi, account_id: str, params: Params, new_dns_records: Dict[str, Params],
+                  ingress_adds: Dict, dns_records_by_zone_id: Optional[Dict] = None,
                   tunnel_ingress_cache: Optional[Dict] = None):
-    cnames = get_cnames(cf, params.zone_id, cnames_by_zone_id)
-    if params.hostname in cnames:
-        LOGGER.info('CNAME "%s" already exists', params.hostname)
-    elif params.hostname in new_cnames:
-        LOGGER.error('duplicate CNAME "%s"', params.hostname)
+    records = get_dns_records(cf, params.zone_id, dns_records_by_zone_id)
+    if params.hostname in records:
+        LOGGER.info('DNS record for "%s" already exists', params.hostname)
+    elif params.hostname in new_dns_records:
+        LOGGER.error('duplicate DNS record for "%s"', params.hostname)
     else:
-        new_cnames[params.hostname] = params
+        new_dns_records[params.hostname] = params
 
     tunnel_ingress = get_tunnel_ingress(cf, account_id, params.tunnel_id, tunnel_ingress_cache)
     if ingress_exists(params, tunnel_ingress):
@@ -198,17 +212,17 @@ def container_add(cf: CloudflareApi, account_id: str, params: Params, new_cnames
         add_tunnel_ingress(params, tunnel_ingress)
         ingress_adds[(account_id, params.tunnel_id)] = tunnel_ingress
 
-    return new_cnames, ingress_adds
+    return new_dns_records, ingress_adds
 
 
-def containers_update_cf(args: argparse.Namespace, cf: CloudflareApi, new_cnames: Dict[str, Params],
+def containers_update_cf(args: argparse.Namespace, cf: CloudflareApi, new_dns_records: Dict[str, Params],
                          ingress_adds: Dict):
-    for cname, params in new_cnames.items():
-        val = tunnel_cname(params.tunnel_id)
-        LOGGER.info(f'Adding CNAME "%s" -> "%s"', cname, val)
+    for record_name, params in new_dns_records.items():
+        val = dns_record_value(params.tunnel_id)
+        LOGGER.info(f'Adding DNS record "%s" -> "%s"', record_name, val)
         if not args.dry_run:
-            if not cf.create_cname(params.zone_id, cname, val):
-                LOGGER.error('Failed to add cname "%s"', cname)
+            if not cf.create_dns_record(params.dns_type, params.zone_id, record_name, val):
+                LOGGER.error('Failed to add DNS record "%s"', record_name)
 
     for keys, tunnel_ingress in ingress_adds.items():
         if not args.dry_run:
@@ -220,9 +234,9 @@ def containers_update_cf(args: argparse.Namespace, cf: CloudflareApi, new_cnames
 def load_containers(args: argparse.Namespace, containers: List, cf: CloudflareApi, cf_account_id: str,
                     cf_tunnel_id: str):
     tunnel_ingress_cache = {}
-    cnames_by_zone_id = {}
+    dns_records_by_zone_id = {}
     zone_name_to_id = {}
-    new_cnames = {}
+    new_dns_records = {}
     ingress_adds = {}
     for container in containers:
         LOGGER.debug('inspecting container "%s"', container.name)
@@ -233,28 +247,29 @@ def load_containers(args: argparse.Namespace, containers: List, cf: CloudflareAp
             continue
         try:
             params = get_params_from_labels(cf, cf_tunnel_id, labels, zone_name_to_id)
-            container_add(cf, cf_account_id, params, new_cnames, ingress_adds, cnames_by_zone_id,
-                          tunnel_ingress_cache)
+            for pp in params:
+                container_add(cf, cf_account_id, pp, new_dns_records, ingress_adds, dns_records_by_zone_id,
+                              tunnel_ingress_cache)
         except Exception as exc:
             LOGGER.error('%s: %s', container.name, exc)
 
-    containers_update_cf(args, cf, new_cnames, ingress_adds)
+    containers_update_cf(args, cf, new_dns_records, ingress_adds)
 
 
 def handle_start_event(args: argparse.Namespace, cf: CloudflareApi, cf_account_id: str, params: Params):
-    new_cnames, ingress_adds = container_add(cf, cf_account_id, params, {}, {})
-    containers_update_cf(args, cf, new_cnames, ingress_adds)
+    new_dns_records, ingress_adds = container_add(cf, cf_account_id, params, {}, {})
+    containers_update_cf(args, cf, new_dns_records, ingress_adds)
 
 
 def handle_stop_event(args: argparse.Namespace, cf: CloudflareApi, account_id: str, params: Params):
-    LOGGER.info(f'Removing CNAME "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
+    LOGGER.info(f'Removing DNS record "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
     record_id = cf.get_dns_record_id(params.zone_id, params.hostname)
     if record_id:
         if not args.dry_run:
-            if not cf.delete_cname(params.zone_id, record_id):
-                LOGGER.error('Failed to remove CNAME "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
+            if not cf.delete_dns_record(params.zone_id, record_id):
+                LOGGER.error('Failed to remove DNS record "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
     else:
-        LOGGER.warning('No CNAME "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
+        LOGGER.warning('No DNS record "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
 
     LOGGER.info(f'Removing public hostname "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
     tunnel_ingress = get_tunnel_ingress(cf, account_id, params.tunnel_id)
@@ -301,17 +316,29 @@ def main(args: argparse.Namespace):
                     continue
 
                 container_name = attributes["name"]
+                LOGGER.info('docker event "%s" for container "%s"', status, container_name)
+
                 try:
-                    LOGGER.info('docker event "%s" for container "%s"', status, container_name)
                     params = get_params_from_labels(cf, cf_tunnel_id, labels)
-                    if status == 'start':
-                        handle_start_event(args, cf, cf_account_id, params)
-                    elif status == 'die':
-                        handle_stop_event(args, cf, cf_account_id, params)
                 except Exception as exc:
                     LOGGER.exception('%s: %s', container_name, exc)
-            except Exception:
-                LOGGER.exception('invalid event')
+                    continue
+
+                if status == 'start':
+                    for pp in params:
+                        try:
+                            handle_start_event(args, cf, cf_account_id, pp)
+                        except Exception as exc:
+                            LOGGER.exception('%s: %s', container_name, exc)
+                elif status == 'die':
+                    for pp in params:
+                        try:
+                            handle_stop_event(args, cf, cf_account_id, pp)
+                        except Exception as exc:
+                            LOGGER.exception('%s: %s', container_name, exc)
+
+            except Exception as exc:
+                LOGGER.exception('invalid event: %s', exc)
     except KeyboardInterrupt:
         pass
     except Exception as exc:
@@ -323,7 +350,7 @@ def main(args: argparse.Namespace):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description='Read docker container labels and automatically add hostnames and CNAMEs to Cloudflare Zero Trust')
+        description='Read docker container labels and automatically add hostnames and DNS records to Cloudflare Zero Trust')
     parser.add_argument('-l', '--log-level', choices=('notset', 'debug', 'info', 'warning', 'error', 'critical'),
                         default='info', help='set the log level [info]')
     parser.add_argument('-d', '--dry-run', action='store_true',
