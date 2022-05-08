@@ -1,6 +1,6 @@
 from enum import Enum
 import logging
-from typing import Optional, Dict
+from typing import Optional
 
 import CloudFlare
 
@@ -28,7 +28,7 @@ class CloudflareApi:
             LOGGER.error('/zones.get - %s - cloudflare api call failed', exc)
         return None
 
-    def get_tunnel_configs(self, account_id: str, tunnel_id: str) -> Optional[Dict]:
+    def get_tunnel_configs(self, account_id: str, tunnel_id: str) -> Optional[dict]:
         try:
             return self._cf.accounts.cfd_tunnel.configurations.get(account_id, tunnel_id)
         except CloudFlare.exceptions.CloudFlareAPIError as exc:
@@ -37,7 +37,7 @@ class CloudflareApi:
             LOGGER.error('/accounts/cfd_tunnels/configurations.get - %s - cloudflare api call failed', exc)
         return None
 
-    def get_dns_records(self, zone_id: str) -> Optional[Dict]:
+    def get_dns_records(self, zone_id: str) -> Optional[list[dict]]:
         try:
             return self._cf.zones.dns_records.get(zone_id, params={'type': ['A', 'CNAME']})
         except CloudFlare.exceptions.CloudFlareAPIError as exc:
@@ -85,7 +85,7 @@ class CloudflareApi:
             return False
         return True
 
-    def update_tunnel_configs(self, account_id: str, tunnel_id: str, data: Dict) -> bool:
+    def update_tunnel_configs(self, account_id: str, tunnel_id: str, data: dict) -> bool:
         try:
             self._cf.accounts.cfd_tunnel.configurations.put(account_id, tunnel_id, data=data)
         except CloudFlare.exceptions.CloudFlareAPIError as exc:

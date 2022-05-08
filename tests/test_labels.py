@@ -34,7 +34,7 @@ class TestLabels(unittest.TestCase):
     def _assert_valid(self, params, tunnel_id, zone_id, notlsverify):
         if len(params) > 0:
             pp = params[0]
-            self.assertEqual(pp.dns_type, DnsRecordType.CNAME)
+            self.assertEqual(pp.dns_params.dns_type, DnsRecordType.CNAME)
             self.assertEqual(pp.hostname, 'host.example.com')
             self.assertEqual(pp.service, 'http://foo:80')
             self.assertEqual(pp.notlsverify, notlsverify)
@@ -43,7 +43,7 @@ class TestLabels(unittest.TestCase):
             self.assertEqual(pp.zone_id, zone_id)
         if len(params) > 1:
             pp = params[1]
-            self.assertEqual(pp.dns_type, DnsRecordType.CNAME)
+            self.assertEqual(pp.dns_params.dns_type, DnsRecordType.CNAME)
             self.assertEqual(pp.hostname, 'example.com')
             self.assertEqual(pp.service, 'http://foo:80')
             self.assertEqual(pp.notlsverify, notlsverify)
@@ -52,7 +52,7 @@ class TestLabels(unittest.TestCase):
             self.assertEqual(pp.zone_id, zone_id)
         if len(params) > 2:
             pp = params[2]
-            self.assertEqual(pp.dns_type, DnsRecordType.CNAME)
+            self.assertEqual(pp.dns_params.dns_type, DnsRecordType.CNAME)
             self.assertEqual(pp.hostname, 'foo.domain.com')
             self.assertEqual(pp.service, 'http://foo:80')
             self.assertEqual(pp.notlsverify, notlsverify)
