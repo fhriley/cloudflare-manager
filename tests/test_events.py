@@ -4,7 +4,8 @@ import unittest
 from unittest.mock import Mock
 
 from cloudflared_hostnames.cloudflare_api import CloudflareApi, DnsRecordType
-from cloudflared_hostnames.main import Params, handle_start_event, handle_stop_event
+from cloudflared_hostnames.api import CachedApi
+from cloudflared_hostnames.main import Params, handle_start_event, handle_die_event
 
 args = argparse.Namespace(dry_run=False)
 
@@ -21,7 +22,7 @@ class TestEvents(unittest.TestCase):
         cf_mock.get_tunnel_configs.return_value = {'tunnel_id': 'tunnel_id', 'config': None}
 
         params = Params('host.example.com', 'http://service:80', 'example.com', 'example_zone_id', 'tunnel_id', None)
-        handle_start_event(args, cf_mock, 'account_id', params)
+        handle_start_event(args, CachedApi(cf_mock), 'account_id', params)
 
         cf_mock.create_dns_record.assert_called_once_with(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com',
                                                           'tunnel_id.cfargotunnel.com')
@@ -42,7 +43,7 @@ class TestEvents(unittest.TestCase):
         cf_mock.get_tunnel_configs.return_value = {'tunnel_id': 'tunnel_id', 'config': None}
 
         params = Params('host.example.com', 'http://service:80', 'example.com', 'example_zone_id', 'tunnel_id', None)
-        handle_start_event(args, cf_mock, 'account_id', params)
+        handle_start_event(args, CachedApi(cf_mock), 'account_id', params)
 
         cf_mock.create_dns_record.assert_not_called()
 
@@ -61,7 +62,7 @@ class TestEvents(unittest.TestCase):
         }
 
         params = Params('host.example.com', 'http://service:80', 'example.com', 'example_zone_id', 'tunnel_id', None)
-        handle_start_event(args, cf_mock, 'account_id', params)
+        handle_start_event(args, CachedApi(cf_mock), 'account_id', params)
         cf_mock.update_tunnel_configs.assert_not_called()
 
     def test_stop(self):
@@ -78,7 +79,7 @@ class TestEvents(unittest.TestCase):
         }
 
         params = Params('host.example.com', 'http://service:80', 'example.com', 'example_zone_id', 'tunnel_id', None)
-        handle_stop_event(args, cf_mock, 'account_id', params)
+        handle_die_event(args, CachedApi(cf_mock), 'account_id', params)
 
         cf_mock.delete_dns_record.assert_called_once_with('example_zone_id', 'dns_record_id')
         value = {
@@ -104,7 +105,7 @@ class TestEvents(unittest.TestCase):
         }
 
         params = Params('host.example.com', 'http://service:80', 'example.com', 'example_zone_id', 'tunnel_id', None)
-        handle_stop_event(args, cf_mock, 'account_id', params)
+        handle_die_event(args, CachedApi(cf_mock), 'account_id', params)
 
         cf_mock.delete_dns_record.assert_not_called()
         value = {
@@ -129,7 +130,7 @@ class TestEvents(unittest.TestCase):
         }
 
         params = Params('host.example.com', 'http://service:80', 'example.com', 'example_zone_id', 'tunnel_id', None)
-        handle_stop_event(args, cf_mock, 'account_id', params)
+        handle_die_event(args, CachedApi(cf_mock), 'account_id', params)
 
         cf_mock.delete_dns_record.assert_called_once_with('example_zone_id', 'dns_record_id')
         cf_mock.update_tunnel_configs.assert_not_called()

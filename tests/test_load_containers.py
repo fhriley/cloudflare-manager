@@ -5,6 +5,7 @@ from typing import NamedTuple, Dict
 from unittest.mock import Mock, call
 
 from cloudflared_hostnames.cloudflare_api import CloudflareApi, DnsRecordType
+from cloudflared_hostnames.api import Api, CachedApi
 from cloudflared_hostnames.main import load_containers
 
 args = argparse.Namespace(dry_run=False)
@@ -35,7 +36,7 @@ class TestLoadContainers(unittest.TestCase):
         cf_mock.get_dns_records.return_value = []
         cf_mock.get_tunnel_configs.return_value = {'tunnel_id': 'tunnel_id', 'config': None}
 
-        load_containers(args, containers, cf_mock, 'account_id', 'tunnel_id')
+        load_containers(args, containers, CachedApi(cf_mock), 'account_id', 'tunnel_id')
 
         cf_mock.create_dns_record.assert_called_once_with(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com',
                                                           'tunnel_id.cfargotunnel.com')
@@ -64,7 +65,7 @@ class TestLoadContainers(unittest.TestCase):
                                          }
                                          ))
 
-        load_containers(args, containers_copy, cf_mock, 'account_id', 'tunnel_id')
+        load_containers(args, containers_copy, CachedApi(cf_mock), 'account_id', 'tunnel_id')
 
         cf_mock.create_dns_record.assert_has_calls([
             call(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com', 'tunnel_id.cfargotunnel.com'),
@@ -92,7 +93,7 @@ class TestLoadContainers(unittest.TestCase):
         containers_copy[0].labels[
             'cloudflare.zero_trust.access.tunnel.public_hostname'] = 'host.example.com,example.com'
 
-        load_containers(args, containers_copy, cf_mock, 'account_id', 'tunnel_id')
+        load_containers(args, containers_copy, CachedApi(cf_mock), 'account_id', 'tunnel_id')
 
         cf_mock.create_dns_record.assert_has_calls([
             call(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com', 'tunnel_id.cfargotunnel.com'),
@@ -116,7 +117,7 @@ class TestLoadContainers(unittest.TestCase):
         cf_mock.get_dns_records.return_value = [{'name': 'host.example.com'}]
         cf_mock.get_tunnel_configs.return_value = {'tunnel_id': 'tunnel_id', 'config': None}
 
-        load_containers(args, containers, cf_mock, 'account_id', 'tunnel_id')
+        load_containers(args, containers, CachedApi(cf_mock), 'account_id', 'tunnel_id')
         cf_mock.create_dns_record.assert_not_called()
 
     def test_load_ingress_already_exists(self):
@@ -133,5 +134,5 @@ class TestLoadContainers(unittest.TestCase):
             },
         }
 
-        load_containers(args, containers, cf_mock, 'account_id', 'tunnel_id')
+        load_containers(args, containers, CachedApi(cf_mock), 'account_id', 'tunnel_id')
         cf_mock.update_tunnel_configs.assert_not_called()

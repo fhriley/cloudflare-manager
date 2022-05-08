@@ -4,13 +4,14 @@ import logging
 import os
 from queue import SimpleQueue
 from threading import Thread
-from typing import Tuple, List, Dict, Optional
+from typing import List, Dict, Optional
 from urllib.parse import urlparse
 
 import docker
 from docker.types.daemon import CancellableStream
 
 from .cloudflare_api import CloudflareApi, DnsRecordType
+from .api import Api, CachedApi
 
 LOGGER = logging.getLogger('cfd-hostnames')
 
@@ -61,7 +62,7 @@ def validate_hostname(hostname: str):
         raise Exception('hostname not specified')
     # TODO: use domain regex
     hostname_split = hostname.split('.')
-    if len(hostname_split) not in (2, 3):
+    if len(hostname_split) < 2:
         raise Exception('hostname must be like "domain.com" or "subdomain.domain.com"')
     return hostname
 
@@ -79,26 +80,7 @@ def validate_service(service: str):
     return service
 
 
-def get_from_cache(cache, func, *keys):
-    if cache is not None:
-        if keys in cache:
-            val = cache[keys]
-        else:
-            val = func()
-            cache[keys] = val
-    else:
-        val = func()
-    return val
 
-
-def get_zone_id(cf: CloudflareApi, name: str, zone_name_to_id: Optional[Dict] = None) -> str:
-    def _get_zone_id() -> str:
-        zone_id = cf.get_zone_id(name)
-        if not zone_id:
-            raise Exception(f'Could not find zone name "{name}"')
-        return zone_id
-
-    return get_from_cache(zone_name_to_id, _get_zone_id, name)
 
 
 _trues = {'true', 'True', 'TRUE', 't', 'T', '1'}
@@ -116,14 +98,10 @@ def validate_notlsverify(val: str) -> Optional[bool]:
 
 
 def get_zone_name(hostname: str) -> str:
-    hostname_split = hostname.split('.')
-    if len(hostname_split) == 2:
-        return hostname
-    return '.'.join(hostname_split[1:])
+    return '.'.join(hostname.split('.')[-2:])
 
 
-def get_params_from_labels(cf: CloudflareApi, default_tunnel_id: str, labels: Dict[str, str],
-                           zone_name_to_id: Optional[Dict[Tuple[str], str]] = None) -> List[Params]:
+def get_params_from_labels(api: Api, default_tunnel_id: str, labels: Dict[str, str]) -> List[Params]:
     hostname = labels.get('cloudflare.zero_trust.access.tunnel.public_hostname')
     hostnames = OrderedDict.fromkeys(hostname.strip().split(','))
     hostnames = [validate_hostname(hn) for hn in hostnames.keys()]
@@ -140,7 +118,7 @@ def get_params_from_labels(cf: CloudflareApi, default_tunnel_id: str, labels: Di
     notlsverify = labels.get('cloudflare.zero_trust.access.tunnel.tls.notlsverify')
     notlsverify = validate_notlsverify(notlsverify)
 
-    zone_ids = [get_zone_id(cf, zone_name, zone_name_to_id) for zone_name in zone_names]
+    zone_ids = [api.get_zone_id(zone_name) for zone_name in zone_names]
 
     return [Params(hn, service, zone_names[ii], zone_ids[ii], tunnel_id, notlsverify) for ii, hn in
             enumerate(hostnames)]
@@ -174,31 +152,9 @@ def add_tunnel_ingress(params: Params, tunnel_ingress: List):
                 params.tunnel_id)
 
 
-def get_dns_records(cf: CloudflareApi, zone_id: str, dns_records_by_zone_id: Optional[Dict] = None):
-    def _get_dns_records() -> Dict:
-        records = cf.get_dns_records(zone_id)
-        if records is None:
-            raise Exception(f'Could not find zone id "{zone_id}"')
-        return {ii['name']: ii for ii in records}
-
-    return get_from_cache(dns_records_by_zone_id, _get_dns_records, zone_id)
-
-
-def get_tunnel_ingress(cf: CloudflareApi, account_id: str, tunnel_id: str,
-                       tunnel_config_cache: Optional[Dict] = None) -> List:
-    def _get_tunnel_ingress():
-        tunnel_ingress = cf.get_tunnel_configs(account_id, tunnel_id)
-        if tunnel_ingress is None:
-            raise Exception(f'Could not find tunnel ingress for account "{account_id}" and tunnel "{tunnel_id}"')
-        return (tunnel_ingress.get('config') or {}).get('ingress') or [{'service': 'http_status:404'}]
-
-    return get_from_cache(tunnel_config_cache, _get_tunnel_ingress, account_id, tunnel_id)
-
-
-def container_add(cf: CloudflareApi, account_id: str, params: Params, new_dns_records: Dict[str, Params],
-                  ingress_adds: Dict, dns_records_by_zone_id: Optional[Dict] = None,
-                  tunnel_ingress_cache: Optional[Dict] = None):
-    records = get_dns_records(cf, params.zone_id, dns_records_by_zone_id)
+def container_add(api: Api, account_id: str, params: Params, new_dns_records: Dict[str, Params],
+                  ingress_adds: Dict):
+    records = api.get_dns_records(params.zone_id)
     if params.hostname in records:
         LOGGER.info('DNS record for "%s" already exists', params.hostname)
     elif params.hostname in new_dns_records:
@@ -206,7 +162,7 @@ def container_add(cf: CloudflareApi, account_id: str, params: Params, new_dns_re
     else:
         new_dns_records[params.hostname] = params
 
-    tunnel_ingress = get_tunnel_ingress(cf, account_id, params.tunnel_id, tunnel_ingress_cache)
+    tunnel_ingress = api.get_tunnel_ingress(account_id, params.tunnel_id)
     if ingress_exists(params, tunnel_ingress):
         LOGGER.info('Public hostname "%s" for tunnel "%s" already exists', params.hostname, params.tunnel_id)
     else:
@@ -216,27 +172,24 @@ def container_add(cf: CloudflareApi, account_id: str, params: Params, new_dns_re
     return new_dns_records, ingress_adds
 
 
-def containers_update_cf(args: argparse.Namespace, cf: CloudflareApi, new_dns_records: Dict[str, Params],
+def containers_update_cf(args: argparse.Namespace, api: Api, new_dns_records: Dict[str, Params],
                          ingress_adds: Dict):
     for record_name, params in new_dns_records.items():
         val = dns_record_value(params.tunnel_id)
         LOGGER.info(f'Adding DNS record "%s" -> "%s"', record_name, val)
         if not args.dry_run:
-            if not cf.create_dns_record(params.dns_type, params.zone_id, record_name, val):
+            if not api.cf.create_dns_record(params.dns_type, params.zone_id, record_name, val):
                 LOGGER.error('Failed to add DNS record "%s"', record_name)
 
     for keys, tunnel_ingress in ingress_adds.items():
         if not args.dry_run:
-            if not cf.update_tunnel_configs(keys[0], keys[1],
-                                            {'config': {'ingress': tunnel_ingress}}):
+            if not api.cf.update_tunnel_configs(keys[0], keys[1],
+                                                {'config': {'ingress': tunnel_ingress}}):
                 LOGGER.error(f'Failed to update tunnel ingress for tunnel "{keys[1]}" failed')
 
 
-def load_containers(args: argparse.Namespace, containers: List, cf: CloudflareApi, cf_account_id: str,
+def load_containers(args: argparse.Namespace, containers: List, api: Api, cf_account_id: str,
                     cf_tunnel_id: str):
-    tunnel_ingress_cache = {}
-    dns_records_by_zone_id = {}
-    zone_name_to_id = {}
     new_dns_records = {}
     ingress_adds = {}
     for container in containers:
@@ -247,67 +200,68 @@ def load_containers(args: argparse.Namespace, containers: List, cf: CloudflareAp
         if not labels:
             continue
         try:
-            params = get_params_from_labels(cf, cf_tunnel_id, labels, zone_name_to_id)
+            params = get_params_from_labels(api, cf_tunnel_id, labels)
             for pp in params:
-                container_add(cf, cf_account_id, pp, new_dns_records, ingress_adds, dns_records_by_zone_id,
-                              tunnel_ingress_cache)
+                container_add(api, cf_account_id, pp, new_dns_records, ingress_adds)
         except Exception as exc:
             LOGGER.error('%s: %s', container.name, exc)
 
-    containers_update_cf(args, cf, new_dns_records, ingress_adds)
+    containers_update_cf(args, api, new_dns_records, ingress_adds)
 
 
-def handle_start_event(args: argparse.Namespace, cf: CloudflareApi, cf_account_id: str, params: Params):
-    new_dns_records, ingress_adds = container_add(cf, cf_account_id, params, {}, {})
-    containers_update_cf(args, cf, new_dns_records, ingress_adds)
+def handle_start_event(args: argparse.Namespace, api: Api, cf_account_id: str, params: Params):
+    new_dns_records, ingress_adds = container_add(api, cf_account_id, params, {}, {})
+    containers_update_cf(args, api, new_dns_records, ingress_adds)
 
 
-def handle_stop_event(args: argparse.Namespace, cf: CloudflareApi, account_id: str, params: Params):
+def handle_die_event(args: argparse.Namespace, api: Api, account_id: str, params: Params):
     LOGGER.info(f'Removing DNS record "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
-    record_id = cf.get_dns_record_id(params.zone_id, params.hostname)
+    record_id = api.get_dns_record_id(params.zone_id, params.hostname)
     if record_id:
         if not args.dry_run:
-            if not cf.delete_dns_record(params.zone_id, record_id):
+            if not api.cf.delete_dns_record(params.zone_id, record_id):
                 LOGGER.error('Failed to remove DNS record "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
     else:
         LOGGER.warning('No DNS record "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
 
     LOGGER.info(f'Removing public hostname "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
-    tunnel_ingress = get_tunnel_ingress(cf, account_id, params.tunnel_id)
+    tunnel_ingress = api.get_tunnel_ingress(account_id, params.tunnel_id)
     before_len = len(tunnel_ingress)
     tunnel_ingress = [ii for ii in tunnel_ingress if ii.get('hostname') != params.hostname]
     if before_len > len(tunnel_ingress) and not args.dry_run:
-        if not cf.update_tunnel_configs(account_id, params.tunnel_id,
-                                        {'config': {'ingress': tunnel_ingress}}):
+        if not api.cf.update_tunnel_configs(account_id, params.tunnel_id,
+                                            {'config': {'ingress': tunnel_ingress}}):
             LOGGER.error('Failed to remove public hostname "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
     else:
         LOGGER.warning('No public hostname "%s" for tunnel "%s"', params.hostname, params.tunnel_id)
 
 
 def main(args: argparse.Namespace):
-    events = None
+    docker_events = None
 
     try:
         cf_account_id, cf_token, cf_tunnel_id = get_env_vars()
 
         cf = CloudflareApi(cf_token, debug=pargs.debug)
-        client = docker.from_env()
+        docker_client = docker.from_env()
 
         queue = SimpleQueue()
-        events = client.events(decode=True)
-        thread = Thread(target=docker_events_thread, args=(events, queue), name='docker_events')
+        docker_events = docker_client.events(decode=True)
+        thread = Thread(target=docker_events_thread, args=(docker_events, queue), name='docker_events')
         thread.start()
 
         LOGGER.info('Using tunnel ID "%s" as default tunnel', cf_tunnel_id)
 
         try:
-            load_containers(args, client.containers.list(all=True), cf, cf_account_id, cf_tunnel_id)
+            api = CachedApi(cf)
+            load_containers(args, docker_client.containers.list(all=True), api, cf_account_id, cf_tunnel_id)
         except Exception as exc:
             LOGGER.critical('%s', exc)
             raise SystemExit(1)
 
         while True:
             event = queue.get()
+            api = CachedApi(cf)
 
             try:
                 status = event['status']
@@ -320,7 +274,7 @@ def main(args: argparse.Namespace):
                 LOGGER.info('docker event "%s" for container "%s"', status, container_name)
 
                 try:
-                    params = get_params_from_labels(cf, cf_tunnel_id, labels)
+                    params = get_params_from_labels(api, cf_tunnel_id, labels)
                 except Exception as exc:
                     LOGGER.exception('%s: %s', container_name, exc)
                     continue
@@ -328,13 +282,13 @@ def main(args: argparse.Namespace):
                 if status == 'start':
                     for pp in params:
                         try:
-                            handle_start_event(args, cf, cf_account_id, pp)
+                            handle_start_event(args, api, cf_account_id, pp)
                         except Exception as exc:
                             LOGGER.exception('%s: %s', container_name, exc)
                 elif status == 'die':
                     for pp in params:
                         try:
-                            handle_stop_event(args, cf, cf_account_id, pp)
+                            handle_die_event(args, api, cf_account_id, pp)
                         except Exception as exc:
                             LOGGER.exception('%s: %s', container_name, exc)
 
@@ -345,13 +299,13 @@ def main(args: argparse.Namespace):
     except Exception as exc:
         LOGGER.critical('failed: %s', exc)
     finally:
-        if events:
-            events.close()
+        if docker_events:
+            docker_events.close()
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='Read docker container labels and automatically add hostnames and DNS records to Cloudflare Zero Trust')
+    parser = argparse.ArgumentParser(description='Read docker container labels and automatically add hostnames '
+                                                 'and DNS records to Cloudflare Zero Trust')
     parser.add_argument('-l', '--log-level', choices=('notset', 'debug', 'info', 'warning', 'error', 'critical'),
                         default='info', help='set the log level [info]')
     parser.add_argument('-d', '--dry-run', action='store_true',
