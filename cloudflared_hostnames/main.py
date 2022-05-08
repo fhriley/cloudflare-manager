@@ -156,6 +156,7 @@ if __name__ == '__main__':
 
     pargs.log_level = getattr(logging, pargs.log_level.upper())
 
-    logging.basicConfig(level=logging.DEBUG if pargs.debug else logging.INFO)
+    logging.basicConfig(level=logging.DEBUG if pargs.debug else logging.INFO,
+                        format='%(asctime)s|%(name)s|%(levelname)s|%(message)s')
     LOGGER.setLevel(pargs.log_level)
     main(pargs)
