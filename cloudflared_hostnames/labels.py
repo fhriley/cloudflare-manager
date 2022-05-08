@@ -92,7 +92,7 @@ def get_cname_params_from_labels(api: Api, labels: dict[str, str]) -> list[DnsPa
     # TODO: validate target
     zone_names = [get_zone_name(hn) for hn in cnames]
     zone_ids = [api.get_zone_id(zone_name) for zone_name in zone_names]
-    return [DnsParams(name, target, zone_ids[ii], DnsRecordType.CNAME) for ii, name in enumerate(cnames)]
+    return [DnsParams(name, target, zone_ids[ii], DnsRecordType.CNAME, False) for ii, name in enumerate(cnames)]
 
 
 def get_aname_params_from_labels(api: Api, labels: dict[str, str]) -> list[DnsParams]:
@@ -105,7 +105,7 @@ def get_aname_params_from_labels(api: Api, labels: dict[str, str]) -> list[DnsPa
     # TODO: validate IP
     zone_names = [get_zone_name(hn) for hn in anames]
     zone_ids = [api.get_zone_id(zone_name) for zone_name in zone_names]
-    return [DnsParams(name, ip, zone_ids[ii], DnsRecordType.A) for ii, name in enumerate(anames)]
+    return [DnsParams(name, ip, zone_ids[ii], DnsRecordType.A, False) for ii, name in enumerate(anames)]
 
 
 def get_params_from_labels(api: Api, default_tunnel_id: str, labels: dict[str, str]) -> list[Params]:

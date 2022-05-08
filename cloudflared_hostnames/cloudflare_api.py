@@ -58,11 +58,11 @@ class CloudflareApi:
             LOGGER.error('/zones.get - %s - cloudflare api call failed', exc)
         return None
 
-    def create_dns_record(self, typ: DnsRecordType, zone_id: str, hostname: str, value: str) -> bool:
+    def create_dns_record(self, typ: DnsRecordType, zone_id: str, hostname: str, value: str, proxied: bool) -> bool:
         try:
             self._cf.zones.dns_records.post(zone_id, data={
                 'type': typ.name,
-                'proxied': True,
+                'proxied': proxied,
                 'name': hostname,
                 'content': value,
             })

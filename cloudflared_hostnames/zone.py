@@ -94,7 +94,7 @@ class Zone:
             LOGGER.info(f'Adding %s DNS record "%s" -> "%s"', params.dns_type.name, params.name, params.value)
             if not args.dry_run:
                 if not self._api.cf.create_dns_record(params.dns_type, params.zone_id, params.name,
-                                                      params.value):
+                                                      params.value, params.proxied):
                     LOGGER.error('Failed to add %s DNS record "%s"', params.dns_type.name, params.name)
         self._new_records.clear()
 

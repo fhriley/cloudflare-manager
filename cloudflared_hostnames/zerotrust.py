@@ -16,7 +16,7 @@ class ZeroTrustParams(Params):
         self._zone_name = zone_name
         self._tunnel_id = tunnel_id
         self._notlsverify = notlsverify
-        self._dns_params = DnsParams(hostname, f'{tunnel_id}.cfargotunnel.com', zone_id, DnsRecordType.CNAME)
+        self._dns_params = DnsParams(hostname, f'{tunnel_id}.cfargotunnel.com', zone_id, DnsRecordType.CNAME, True)
 
     def __str__(self):
         return f'{self._dns_params} -> {self._service}'

@@ -8,11 +8,12 @@ LOGGER = logging.getLogger('cfd-hostnames.dns')
 
 
 class DnsParams(Params):
-    def __init__(self, name: str, value: str, zone_id: str, dns_type: DnsRecordType):
+    def __init__(self, name: str, value: str, zone_id: str, dns_type: DnsRecordType, proxied: bool):
         super().__init__(zone_id)
         self._name = name
         self._value = value
         self._dns_type = dns_type
+        self._proxied = proxied
 
     def __hash__(self):
         return hash((self._dns_type, self._zone_id, self._name))
@@ -34,6 +35,10 @@ class DnsParams(Params):
     @property
     def dns_type(self):
         return self._dns_type
+
+    @property
+    def proxied(self):
+        return self._proxied
 
     def add_to_zone(self, zone):
         zone.add_dns_record(self)
