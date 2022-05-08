@@ -1,6 +1,7 @@
 import argparse
 from collections import OrderedDict
 import logging
+from pprint import pformat
 from .api import Api
 from .dns import DnsParams
 from .zerotrust import ZeroTrustParams
@@ -91,7 +92,7 @@ class Zone:
         self._dns_removals.clear()
 
         for params in self._new_records.keys():
-            LOGGER.info(f'Adding %s DNS record "%s" -> "%s"', params.dns_type.name, params.name, params.value)
+            LOGGER.info('Adding %s DNS record "%s" -> "%s"', params.dns_type.name, params.name, params.value)
             if not args.dry_run:
                 if not self._api.cf.create_dns_record(params.dns_type, params.zone_id, params.name,
                                                       params.value, params.proxied):
@@ -100,6 +101,8 @@ class Zone:
 
         if self._ingress_changed:
             for tunnel_id, tunnel_ingress in self._ingress_by_tunnel_id.items():
+                if LOGGER.isEnabledFor(logging.INFO):
+                    LOGGER.info('Updating ingress for tunnel %s:\n%s', tunnel_id, pformat(tunnel_ingress))
                 if not args.dry_run:
                     if not self._api.cf.update_tunnel_configs(self._account_id, tunnel_id,
                                                               {'config': {'ingress': tunnel_ingress}}):

@@ -1,5 +1,6 @@
 import argparse
 from copy import deepcopy
+import logging
 import unittest
 from typing import NamedTuple, Dict
 from unittest.mock import Mock, call
@@ -7,6 +8,9 @@ from unittest.mock import Mock, call
 from cloudflared_hostnames.cloudflare_api import CloudflareApi, DnsRecordType
 from cloudflared_hostnames.api import CachedApi
 from cloudflared_hostnames.main import load_containers
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s|%(name)s|%(levelname)s|%(message)s')
 
 args = argparse.Namespace(dry_run=False)
 
@@ -43,9 +47,9 @@ class TestLoadContainers(unittest.TestCase):
         load_containers(args, containers, CachedApi(cf_mock), 'account_id', 'tunnel_id')
 
         cf_mock.create_dns_record.assert_has_calls([
-            call(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com', 'tunnel_id.cfargotunnel.com'),
-            call(DnsRecordType.CNAME, 'example_zone_id', 'cname.example.com', 'target.example.com'),
-            call(DnsRecordType.A, 'example_zone_id', 'a.example.com', '127.0.0.1'),
+            call(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com', 'tunnel_id.cfargotunnel.com', True),
+            call(DnsRecordType.CNAME, 'example_zone_id', 'cname.example.com', 'target.example.com', False),
+            call(DnsRecordType.A, 'example_zone_id', 'a.example.com', '127.0.0.1', False),
         ])
 
         value = {
@@ -76,10 +80,10 @@ class TestLoadContainers(unittest.TestCase):
         load_containers(args, containers_copy, CachedApi(cf_mock), 'account_id', 'tunnel_id')
 
         cf_mock.create_dns_record.assert_has_calls([
-            call(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com', 'tunnel_id.cfargotunnel.com'),
-            call(DnsRecordType.CNAME, 'example_zone_id', 'cname.example.com', 'target.example.com'),
-            call(DnsRecordType.A, 'example_zone_id', 'a.example.com', '127.0.0.1'),
-            call(DnsRecordType.CNAME, 'example_zone_id', 'host2.example.com', 'tunnel_id.cfargotunnel.com'),
+            call(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com', 'tunnel_id.cfargotunnel.com', True),
+            call(DnsRecordType.CNAME, 'example_zone_id', 'cname.example.com', 'target.example.com', False),
+            call(DnsRecordType.A, 'example_zone_id', 'a.example.com', '127.0.0.1', False),
+            call(DnsRecordType.CNAME, 'example_zone_id', 'host2.example.com', 'tunnel_id.cfargotunnel.com', True),
         ])
         value = {
             'config': {
@@ -106,8 +110,8 @@ class TestLoadContainers(unittest.TestCase):
         load_containers(args, containers_copy, CachedApi(cf_mock), 'account_id', 'tunnel_id')
 
         cf_mock.create_dns_record.assert_has_calls([
-            call(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com', 'tunnel_id.cfargotunnel.com'),
-            call(DnsRecordType.CNAME, 'example_zone_id', 'example.com', 'tunnel_id.cfargotunnel.com'),
+            call(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com', 'tunnel_id.cfargotunnel.com', True),
+            call(DnsRecordType.CNAME, 'example_zone_id', 'example.com', 'tunnel_id.cfargotunnel.com', True),
         ])
 
         value = {

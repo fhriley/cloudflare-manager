@@ -28,7 +28,7 @@ class TestEvents(unittest.TestCase):
         zone.update_cloudflare(args)
 
         cf_mock.create_dns_record.assert_called_once_with(DnsRecordType.CNAME, 'example_zone_id', 'host.example.com',
-                                                          'tunnel_id.cfargotunnel.com')
+                                                          'tunnel_id.cfargotunnel.com', True)
         value = {
             'config': {
                 'ingress': [
