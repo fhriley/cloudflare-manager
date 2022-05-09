@@ -2,9 +2,9 @@ import logging
 import unittest
 from unittest.mock import Mock
 
-from cloudflared_hostnames.cloudflare_api import CloudflareApi, DnsRecordType
-from cloudflared_hostnames.api import Api, CachedApi
-from cloudflared_hostnames.main import get_params_from_labels
+from cloudflare_manager.cloudflare_api import CloudflareApi, DnsRecordType
+from cloudflare_manager.api import Api, CachedApi
+from cloudflare_manager.main import get_params_from_labels
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s|%(name)s|%(levelname)s|%(message)s')

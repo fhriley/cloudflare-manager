@@ -4,10 +4,10 @@ import logging
 import unittest
 from unittest.mock import Mock, call
 
-from cloudflared_hostnames.cloudflare_api import CloudflareApi, DnsRecordType
-from cloudflared_hostnames.api import CachedApi
-from cloudflared_hostnames.main import handle_start_event, handle_die_event, update_cloudflare
-from cloudflared_hostnames.zerotrust import ZeroTrustParams
+from cloudflare_manager.cloudflare_api import CloudflareApi, DnsRecordType
+from cloudflare_manager.api import CachedApi
+from cloudflare_manager.main import handle_start_event, handle_die_event, update_cloudflare
+from cloudflare_manager.zerotrust import ZeroTrustParams
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s|%(name)s|%(levelname)s|%(message)s')

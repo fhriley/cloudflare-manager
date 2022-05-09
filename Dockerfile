@@ -19,6 +19,6 @@ WORKDIR /usr/src/app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY cloudflared_hostnames ./cloudflared_hostnames
+COPY cloudflare_manager ./cloudflare_manager
 
-ENTRYPOINT [ "python", "-m", "cloudflared_hostnames.main" ]
+ENTRYPOINT [ "python", "-m", "cloudflare_manager.main" ]

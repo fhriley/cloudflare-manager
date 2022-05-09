@@ -31,5 +31,5 @@ jobs:
             linux/arm/v7
           push: true
           tags: |
-            fhriley/cloudflared-hostnames:latest
-          cache-from: type=registry,ref=fhriley/cloudflared-hostnames:latest
+            fhriley/cloudflare-manager:latest
+          cache-from: type=registry,ref=fhriley/cloudflare-manager:latest

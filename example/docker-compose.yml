@@ -8,8 +8,8 @@ services:
       - cloudflared
     entrypoint: "cloudflared --no-autoupdate tunnel --loglevel info run --token $CLOUDFLARE_TUNNEL_TOKEN"
     
-  cloudflared-hostnames:
-    image: fhriley/cloudflared-hostnames:latest
+  cloudflare-manager:
+    image: fhriley/cloudflare-manager:latest
     restart: always
     environment:
       CLOUDFLARE_ACCOUNT_ID: $CLOUDFLARE_ACCOUNT_ID

@@ -4,7 +4,7 @@ import subprocess
 import shlex
 
 BASE_IMAGE = 'python:3.10-alpine'
-IMAGE_NAME = 'fhriley/cloudflared-hostnames'
+IMAGE_NAME = 'fhriley/cloudflare-manager'
 PLATFORMS = ['linux/amd64', 'linux/arm64', 'linux/arm/v7']
 CACHE = f'type=registry,ref={IMAGE_NAME}:'
 BUILDX = 'docker buildx build {build_args} --platform {platforms} {tags} --cache-to type=inline,mode=max {push} {load} {no_cache} .'

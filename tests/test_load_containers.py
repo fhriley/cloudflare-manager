@@ -5,9 +5,9 @@ import unittest
 from typing import NamedTuple, Dict
 from unittest.mock import Mock, call
 
-from cloudflared_hostnames.cloudflare_api import CloudflareApi, DnsRecordType
-from cloudflared_hostnames.api import CachedApi
-from cloudflared_hostnames.main import load_containers
+from cloudflare_manager.cloudflare_api import CloudflareApi, DnsRecordType
+from cloudflare_manager.api import CachedApi
+from cloudflare_manager.main import load_containers
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s|%(name)s|%(levelname)s|%(message)s')

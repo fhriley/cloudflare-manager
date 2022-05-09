@@ -4,12 +4,12 @@
 
 ```
 docker run -d \
-    --name=cloudflared-hostnames \
+    --name=cloudflare-manager \
     -v /var/run/docker.sock:/var/run/docker.sock \
     -e CLOUDFLARE_TUNNEL_ID=<TUNNEL_ID> \
     -e CLOUDFLARE_API_KEY=<API_KEY> \
     -e CLOUDFLARE_ACCOUNT_ID=<ACCOUNT_ID> \
-    fhriley/cloudflared-hostnames
+    fhriley/cloudflare-manager
 ```
 
 ### Environment Variables
@@ -35,4 +35,4 @@ of this parameter has the format `<VARIABLE_NAME>=<VALUE>`.
 
 ### Example
 
-A fully working docker compose example can be found [here](https://github.com/fhriley/cloudflared-hostnames/tree/main/example).
+A fully working docker compose example can be found [here](https://github.com/fhriley/cloudflare-manager/tree/main/example).
