@@ -10,6 +10,8 @@ from docker.types.daemon import CancellableStream
 from .cloudflare_api import CloudflareApi
 from .api import Api, CachedApi
 from .labels import get_params_from_labels
+from .params import Params
+from .tunnel import Tunnel
 from .zone import Zone
 
 LOGGER = logging.getLogger('cfd-hostnames')
@@ -42,9 +44,32 @@ def get_labels(labels: dict[str, str]):
     return {key: val for key, val in labels.items() if key.startswith('cloudflare.')}
 
 
+def handle_start_event(zones: dict[str, Zone], tunnels: dict[str, Tunnel], params: Params):
+    zone = zones.get(params.zone_id) or Zone(params.api, params.account_id, params.zone_id)
+    zones[params.zone_id] = zone
+    params.add_to_zone(zone)
+    params.add_to_tunnel(tunnels)
+
+
+def handle_die_event(zones: dict[str, Zone], tunnels: dict[str, Tunnel], params: Params):
+    zone = zones.get(params.zone_id) or Zone(params.api, params.account_id, params.zone_id)
+    zones[params.zone_id] = zone
+    params.remove_from_zone(zone)
+    params.remove_from_tunnel(tunnels)
+
+
+def update_cloudflare(args: argparse.Namespace, zones: dict[str, Zone], tunnels: dict[str, Tunnel]):
+    for zone in zones.values():
+        zone.update_cloudflare(args)
+
+    for tunnel in tunnels.values():
+        tunnel.update_cloudflare(args)
+
+
 def load_containers(args: argparse.Namespace, containers: list, api: Api, cf_account_id: str,
                     cf_tunnel_id: str):
     zones: dict[str, Zone] = {}
+    tunnels: dict[str, Tunnel] = {}
     for container in containers:
         LOGGER.debug('inspecting container "%s"', container.name)
         if container.status != 'running':
@@ -53,19 +78,16 @@ def load_containers(args: argparse.Namespace, containers: list, api: Api, cf_acc
         if not labels:
             continue
         try:
-            params = get_params_from_labels(api, cf_tunnel_id, labels)
+            params = get_params_from_labels(api, cf_account_id, cf_tunnel_id, labels)
             for pp in params:
                 try:
-                    zone = zones.get(pp.zone_id) or Zone(api, cf_account_id, pp.zone_id)
-                    zones[pp.zone_id] = zone
-                    pp.add_to_zone(zone)
+                    handle_start_event(zones, tunnels, pp)
                 except Exception as exc:
                     LOGGER.exception('%s (%s): %s', container.name, pp, exc)
         except Exception as exc:
             LOGGER.error('%s: %s', container.name, exc)
 
-    for zone in zones.values():
-        zone.update_cloudflare(args)
+    update_cloudflare(args, zones, tunnels)
 
 
 def main(args: argparse.Namespace):
@@ -95,6 +117,7 @@ def main(args: argparse.Namespace):
             event = queue.get()
             api = CachedApi(cf)
             zones: dict[str, Zone] = {}
+            tunnels: dict[str, Tunnel] = {}
 
             try:
                 status = event['status']
@@ -107,7 +130,7 @@ def main(args: argparse.Namespace):
                 LOGGER.info('docker event "%s" for container "%s"', status, container_name)
 
                 try:
-                    params = get_params_from_labels(api, cf_tunnel_id, labels)
+                    params = get_params_from_labels(api, cf_account_id, cf_tunnel_id, labels)
                 except Exception as exc:
                     LOGGER.exception('%s: %s', container_name, exc)
                     continue
@@ -115,22 +138,17 @@ def main(args: argparse.Namespace):
                 if status == 'start':
                     for pp in params:
                         try:
-                            zone = zones.get(pp.zone_id) or Zone(api, cf_account_id, pp.zone_id)
-                            zones[pp.zone_id] = zone
-                            pp.add_to_zone(zone)
+                            handle_start_event(zones, tunnels, pp)
                         except Exception as exc:
                             LOGGER.exception('%s (%s): %s', container_name, pp, exc)
                 elif status == 'die':
                     for pp in params:
                         try:
-                            zone = zones.get(pp.zone_id) or Zone(api, cf_account_id, pp.zone_id)
-                            zones[pp.zone_id] = zone
-                            pp.remove_from_zone(zone)
+                            handle_die_event(zones, tunnels, pp)
                         except Exception as exc:
                             LOGGER.exception('%s (%s): %s', container_name, pp, exc)
 
-                for zone in zones.values():
-                    zone.update_cloudflare(args)
+                update_cloudflare(args, zones, tunnels)
 
             except Exception as exc:
                 LOGGER.exception('invalid event: %s', exc)

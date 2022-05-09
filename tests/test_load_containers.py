@@ -128,7 +128,8 @@ class TestLoadContainers(unittest.TestCase):
     def test_load_dns_record_already_exists(self):
         cf_mock = Mock(CloudflareApi)
         cf_mock.get_zone_id.return_value = 'example_zone_id'
-        cf_mock.get_dns_records.return_value = [{'name': 'host.example.com'}, {'name': 'cname.example.com'}, {'name': 'a.example.com'}]
+        cf_mock.get_dns_records.return_value = [{'name': 'host.example.com'}, {'name': 'cname.example.com'},
+                                                {'name': 'a.example.com'}]
         cf_mock.get_tunnel_configs.return_value = {'tunnel_id': 'tunnel_id', 'config': None}
 
         load_containers(args, containers, CachedApi(cf_mock), 'account_id', 'tunnel_id')

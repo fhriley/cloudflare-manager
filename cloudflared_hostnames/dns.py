@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from .api import Api
 from .cloudflare_api import DnsRecordType
 from .params import Params
 
@@ -8,8 +9,9 @@ LOGGER = logging.getLogger('cfd-hostnames.dns')
 
 
 class DnsParams(Params):
-    def __init__(self, name: str, value: str, zone_id: str, dns_type: DnsRecordType, proxied: bool):
-        super().__init__(zone_id)
+    def __init__(self, api: Api, account_id: str, name: str, value: str, zone_id: str, dns_type: DnsRecordType,
+                 proxied: bool):
+        super().__init__(api, account_id, zone_id)
         self._name = name
         self._value = value
         self._dns_type = dns_type
