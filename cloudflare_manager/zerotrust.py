@@ -6,7 +6,7 @@ from .api import Api
 from .dns import DnsParams
 from .tunnel import Tunnel
 
-LOGGER = logging.getLogger('cfd-hostnames.zerotrust')
+LOGGER = logging.getLogger('cf-mgr.zerotrust')
 
 
 class ZeroTrustParams(Params):

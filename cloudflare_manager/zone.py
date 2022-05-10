@@ -4,7 +4,7 @@ import logging
 from .api import Api
 from .dns import DnsParams
 
-LOGGER = logging.getLogger('cfd-hostnames.zone')
+LOGGER = logging.getLogger('cf-mgr.zone')
 
 
 class Zone:

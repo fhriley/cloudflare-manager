@@ -14,7 +14,7 @@ from .params import Params
 from .tunnel import Tunnel
 from .zone import Zone
 
-LOGGER = logging.getLogger('cfmanager')
+LOGGER = logging.getLogger('cf-mgr.main')
 
 
 def docker_events_thread(events: CancellableStream, queue: SimpleQueue):

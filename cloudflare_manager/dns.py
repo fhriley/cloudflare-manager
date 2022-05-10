@@ -5,7 +5,7 @@ from .api import Api
 from .cloudflare_api import DnsRecordType
 from .params import Params
 
-LOGGER = logging.getLogger('cfd-hostnames.dns')
+LOGGER = logging.getLogger('cf-mgr.dns')
 
 
 class DnsParams(Params):

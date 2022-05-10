@@ -4,7 +4,7 @@ from typing import Optional
 
 import CloudFlare
 
-LOGGER = logging.getLogger('cfd-hostnames.api')
+LOGGER = logging.getLogger('cf-mgr.api')
 
 
 class DnsRecordType(Enum):

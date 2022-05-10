@@ -3,7 +3,7 @@ import logging
 from pprint import pformat
 from .api import Api
 
-LOGGER = logging.getLogger('cfd-hostnames.tunnel')
+LOGGER = logging.getLogger('cf-mgr.tunnel')
 
 
 def ingress_exists(params, tunnel_ingress: list) -> bool:
