@@ -39,7 +39,8 @@ class CloudflareApi:
 
     def get_dns_records(self, zone_id: str) -> Optional[list[dict]]:
         try:
-            return self._cf.zones.dns_records.get(zone_id, params={'type': ['A', 'CNAME']})
+            records = self._cf.zones.dns_records.get(zone_id)
+            return [record for record in records if record['type'] in ['A', 'CNAME']]
         except CloudFlare.exceptions.CloudFlareAPIError as exc:
             LOGGER.error('/zones/dns_records.get %d %s - cloudflare api call failed', exc, exc)
         except Exception as exc:
