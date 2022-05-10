@@ -12,13 +12,17 @@ LOGGER = logging.getLogger('cfd-hostnames.zerotrust')
 class ZeroTrustParams(Params):
     def __init__(self, api: Api, account_id: str, hostname: str, service: str, zone_name: str, zone_id: str,
                  tunnel_id: str,
-                 notlsverify: Optional[bool] = None):
+                 notlsverify: Optional[bool] = None,
+                 host_header: Optional[str] = None,
+                 origin_server_name: Optional[str] = None):
         super().__init__(api, account_id, zone_id)
         self._hostname = hostname
         self._service = service
         self._zone_name = zone_name
         self._tunnel_id = tunnel_id
         self._notlsverify = notlsverify
+        self._host_header = host_header
+        self._origin_server_name = origin_server_name
         self._dns_params = DnsParams(api, account_id, hostname, f'{tunnel_id}.cfargotunnel.com', zone_id,
                                      DnsRecordType.CNAME, True)
 
@@ -44,6 +48,14 @@ class ZeroTrustParams(Params):
     @property
     def notlsverify(self):
         return self._notlsverify
+
+    @property
+    def host_header(self):
+        return self._host_header
+
+    @property
+    def origin_server_name(self):
+        return self._origin_server_name
 
     @property
     def dns_params(self):

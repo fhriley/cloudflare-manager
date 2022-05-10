@@ -1,6 +1,6 @@
 from collections import OrderedDict
-from typing import Optional
 from urllib.parse import urlparse
+from typing import NamedTuple, Optional
 
 from .cloudflare_api import DnsRecordType
 from .api import Api
@@ -8,8 +8,16 @@ from .params import Params
 from .dns import DnsParams
 from .zerotrust import ZeroTrustParams
 
-_trues = {'true', 'True', 'TRUE', 't', 'T', '1'}
-_falses = {'false', 'False', 'FALSE', 'f', 'F', '0'}
+TRUES = {'true', 'True', 'TRUE', 't', 'T', '1', True, 1}
+FALSES = {'false', 'False', 'FALSE', 'f', 'F', '0', False, 0, None}
+
+
+class Settings(NamedTuple):
+    account_id: str
+    tunnel_id: str
+    auto_http_host_header: bool
+    cname: Optional[str]
+    service: Optional[str]
 
 
 def validate_hostname(hostname: str):
@@ -36,9 +44,9 @@ def validate_service(service: str):
 def validate_notlsverify(val: str) -> Optional[bool]:
     if val is None:
         return None
-    if val in _trues:
+    if val in TRUES:
         return True
-    if val in _falses:
+    if val in FALSES:
         return False
     raise Exception(f'invalid notlsverify value: "{val}"')
 
@@ -62,43 +70,51 @@ def get_names_from_label(labels: dict[str, str], label: str) -> list[str]:
     return [validate_hostname(hn) for hn in names.keys()]
 
 
-def get_zt_params_from_labels(api: Api, account_id: str, default_tunnel_id: str, labels: dict[str, str]) -> list[
-        ZeroTrustParams]:
+def get_zt_params_from_labels(api: Api, settings: Settings, labels: dict[str, str]) -> list[
+    ZeroTrustParams]:
     hostnames = get_names_from_label(labels, 'cloudflare.zero_trust.access.tunnel.public_hostname')
     if not hostnames:
         return []
 
-    service = get_val_from_label(labels, 'cloudflare.zero_trust.access.tunnel.service')
+    service = get_val_from_label(labels, 'cloudflare.zero_trust.access.tunnel.service', settings.service)
     service = validate_service(service)
 
     zone_names = [get_zone_name(hn) for hn in hostnames]
     zone_ids = [api.get_zone_id(zone_name) for zone_name in zone_names]
 
-    tunnel_id = get_val_from_label(labels, 'cloudflare.zero_trust.access.tunnel.id', default_tunnel_id)
+    tunnel_id = get_val_from_label(labels, 'cloudflare.zero_trust.access.tunnel.id', settings.tunnel_id)
 
     notlsverify = get_val_from_label(labels, 'cloudflare.zero_trust.access.tunnel.tls.notlsverify')
     notlsverify = validate_notlsverify(notlsverify)
 
-    return [ZeroTrustParams(api, account_id, hn, service, zone_names[ii], zone_ids[ii], tunnel_id, notlsverify) for
+    if settings.auto_http_host_header:
+        host_headers = hostnames
+        origin_server_names = [f'*.{zn}' for zn in zone_names]
+    else:
+        host_headers = [None] * len(hostnames)
+        origin_server_names = [None] * len(hostnames)
+
+    return [ZeroTrustParams(api, settings.account_id, hn, service, zone_names[ii], zone_ids[ii], tunnel_id, notlsverify,
+                            host_headers[ii], origin_server_names[ii]) for
             ii, hn in
             enumerate(hostnames)]
 
 
-def get_cname_params_from_labels(api: Api, account_id: str, labels: dict[str, str]) -> list[DnsParams]:
+def get_cname_params_from_labels(api: Api, settings: Settings, labels: dict[str, str]) -> list[DnsParams]:
     cnames = get_names_from_label(labels, 'cloudflare.dns.cname.name')
     if not cnames:
         return []
-    target = get_val_from_label(labels, 'cloudflare.dns.cname.target')
+    target = get_val_from_label(labels, 'cloudflare.dns.cname.target', settings.cname)
     if not target:
         raise Exception('target not specified for CNAME')
     # TODO: validate target
     zone_names = [get_zone_name(hn) for hn in cnames]
     zone_ids = [api.get_zone_id(zone_name) for zone_name in zone_names]
-    return [DnsParams(api, account_id, name, target, zone_ids[ii], DnsRecordType.CNAME, False) for ii, name in
+    return [DnsParams(api, settings.account_id, name, target, zone_ids[ii], DnsRecordType.CNAME, False) for ii, name in
             enumerate(cnames)]
 
 
-def get_aname_params_from_labels(api: Api, account_id: str, labels: dict[str, str]) -> list[DnsParams]:
+def get_aname_params_from_labels(api: Api, settings: Settings, labels: dict[str, str]) -> list[DnsParams]:
     anames = get_names_from_label(labels, 'cloudflare.dns.a.name')
     if not anames:
         return []
@@ -108,12 +124,12 @@ def get_aname_params_from_labels(api: Api, account_id: str, labels: dict[str, st
     # TODO: validate IP
     zone_names = [get_zone_name(hn) for hn in anames]
     zone_ids = [api.get_zone_id(zone_name) for zone_name in zone_names]
-    return [DnsParams(api, account_id, name, ip, zone_ids[ii], DnsRecordType.A, False) for ii, name in
+    return [DnsParams(api, settings.account_id, name, ip, zone_ids[ii], DnsRecordType.A, False) for ii, name in
             enumerate(anames)]
 
 
-def get_params_from_labels(api: Api, account_id: str, default_tunnel_id: str, labels: dict[str, str]) -> list[Params]:
-    params: list[Params] = get_zt_params_from_labels(api, account_id, default_tunnel_id, labels)
-    params.extend(get_cname_params_from_labels(api, account_id, labels))
-    params.extend(get_aname_params_from_labels(api, account_id, labels))
+def get_params_from_labels(api: Api, settings: Settings, labels: dict[str, str]) -> list[Params]:
+    params: list[Params] = get_zt_params_from_labels(api, settings, labels)
+    params.extend(get_cname_params_from_labels(api, settings, labels))
+    params.extend(get_aname_params_from_labels(api, settings, labels))
     return params

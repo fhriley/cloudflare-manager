@@ -9,12 +9,12 @@ from docker.types.daemon import CancellableStream
 
 from .cloudflare_api import CloudflareApi
 from .api import Api, CachedApi
-from .labels import get_params_from_labels
+from .labels import Settings, get_params_from_labels, TRUES
 from .params import Params
 from .tunnel import Tunnel
 from .zone import Zone
 
-LOGGER = logging.getLogger('cfd-hostnames')
+LOGGER = logging.getLogger('cfmanager')
 
 
 def docker_events_thread(events: CancellableStream, queue: SimpleQueue):
@@ -66,8 +66,7 @@ def update_cloudflare(args: argparse.Namespace, zones: dict[str, Zone], tunnels:
         tunnel.update_cloudflare(args)
 
 
-def load_containers(args: argparse.Namespace, containers: list, api: Api, cf_account_id: str,
-                    cf_tunnel_id: str):
+def load_containers(args: argparse.Namespace, containers: list, api: Api, settings: Settings):
     zones: dict[str, Zone] = {}
     tunnels: dict[str, Tunnel] = {}
     for container in containers:
@@ -78,7 +77,7 @@ def load_containers(args: argparse.Namespace, containers: list, api: Api, cf_acc
         if not labels:
             continue
         try:
-            params = get_params_from_labels(api, cf_account_id, cf_tunnel_id, labels)
+            params = get_params_from_labels(api, settings, labels)
             for pp in params:
                 try:
                     handle_start_event(zones, tunnels, pp)
@@ -95,6 +94,10 @@ def main(args: argparse.Namespace):
 
     try:
         cf_account_id, cf_token, cf_tunnel_id = get_env_vars()
+        settings = Settings(
+            cf_account_id, cf_tunnel_id, os.environ.get('CLOUDFLARE_AUTO_HTTP_HOST_HEADER') in TRUES,
+            os.environ.get('CLOUDFLARE_DEFAULT_CNAME'),
+            os.environ.get('CLOUDFLARE_DEFAULT_SERVICE'))
 
         cf = CloudflareApi(cf_token, debug=pargs.debug)
         docker_client = docker.from_env()
@@ -108,7 +111,7 @@ def main(args: argparse.Namespace):
 
         try:
             api = CachedApi(cf)
-            load_containers(args, docker_client.containers.list(all=True), api, cf_account_id, cf_tunnel_id)
+            load_containers(args, docker_client.containers.list(all=True), api, settings)
         except Exception as exc:
             LOGGER.critical('%s', exc)
             raise SystemExit(1)
@@ -130,7 +133,7 @@ def main(args: argparse.Namespace):
                 LOGGER.info('docker event "%s" for container "%s"', status, container_name)
 
                 try:
-                    params = get_params_from_labels(api, cf_account_id, cf_tunnel_id, labels)
+                    params = get_params_from_labels(api, settings, labels)
                 except Exception as exc:
                     LOGGER.exception('%s: %s', container_name, exc)
                     continue

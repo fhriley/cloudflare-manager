@@ -18,6 +18,10 @@ def params_to_tunnel_ingress_entry(params) -> dict[str, str]:
     origin_request = {}
     if params.notlsverify is not None:
         origin_request['noTLSVerify'] = params.notlsverify
+    if params.host_header is not None:
+        origin_request['httpHostHeader'] = params.host_header
+    if params.origin_server_name is not None:
+        origin_request['originServerName'] = params.origin_server_name
     return {
         'service': params.service,
         'hostname': params.hostname,
